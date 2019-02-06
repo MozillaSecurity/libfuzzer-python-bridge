@@ -17,7 +17,7 @@ Python Build flags can be found using
 
 and the flags above should work for Ubuntu LTS (18.04).
 
-You can build with -DBENCHMARK to leave out the crashing code in order to compare performance of the two implementations.
+You can build with `-DBENCHMARK` to leave out the crashing code in order to compare performance of the two implementations.
 
 ## Running
 
@@ -30,3 +30,5 @@ To run the python example, use
 * Support calling `LLVMFuzzerMutate` from Python (e.g. for the PNG example)
 * `LLVMFuzzerFinalizePythonModule` currently isn't called
 * `LLVMFuzzerInitPythonModule` should be called by a global constructor
+* Implement `LLVMFuzzerCustomCrossOver` in C++ and Python example
+* For some reason, the Python code is faster in benchmarks than the C++ code. There must be a bug somewhere, please find it!
