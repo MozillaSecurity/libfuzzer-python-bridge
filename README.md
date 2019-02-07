@@ -3,6 +3,18 @@ A Python3 bridge for implementing custom libFuzzer mutators
 
 **Important:** This is proof-of-concept and work in progress. Expect the Python API to change.
 
+## Why?
+
+Many people are interested in fuzzing, but lack the knowledge (and/or insanity) to implement
+complex fuzzing mutators in C/C++. Things like [protocol buffers](https://github.com/google/fuzzer-test-suite/blob/master/tutorial/structure-aware-fuzzing.md#example-protocol-buffers)
+can make this a lot easier but cannot be applied in all cases.
+
+A generic Python bridge allows you to implement whatever logic you have in mind without
+touching the C/C++ parts further (assuming you already have a libFuzzer target).
+
+**Note:** You still need a libFuzzer target in C/C++, this implementation is just extending
+libFuzzer with custom mutators written in Python.
+
 ## Building and Running the Examples
 
 To build the examples:
