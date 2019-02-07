@@ -3,7 +3,7 @@ A Python3 bridge for implementing custom libFuzzer mutators
 
 **Important:** This is proof-of-concept and work in progress. Expect the Python API to change.
 
-## Building
+## Building and Running the Examples
 
 To build the examples:
 
@@ -19,11 +19,22 @@ and the flags above should work for Ubuntu LTS (18.04).
 
 You can build with `-DBENCHMARK` to leave out the crashing code in order to compare performance of the two implementations.
 
-## Running
-
 To run the python example, use
 
     PYTHONPATH=. LIBFUZZER_PYTHON_MODULE=pymodules.example_compressed ./example_compressed_python
+
+## Using with your own targets
+
+All you need to do on the C/C++ side is
+
+    #include "python_bridge.cpp"
+
+in the target file where you have `LLVMFuzzerTestOneInput` (or any other compilation unit that is linked to the target)
+and then build with the Python include and linker flags added to your build configuration.
+
+Then write a Python module that does what you would like the fuzzer to do, you might want to use
+the `example_compressed` module found in the `pymodules/` folder as a basis. Then just run your
+fuzzing as shown in the examples above.
 
 ## TODO
 
