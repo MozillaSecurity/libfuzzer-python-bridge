@@ -28,6 +28,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
 
 #ifdef CUSTOM_MUTATOR
 
+// Forward-declare the libFuzzer's mutator callback.
+extern "C" size_t LLVMFuzzerMutate(uint8_t *Data, size_t Size, size_t MaxSize);
+
 // The custom mutator:
 //   * deserialize the data (in this case, uncompress).
 //     * If the data doesn't deserialize, create a properly serialized dummy.
@@ -50,8 +53,8 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
     return CompressedLen;
   }
 
-  srand(Seed);
-  Uncompressed[rand() % UncompressedLen] = rand();
+  UncompressedLen =
+    LLVMFuzzerMutate(Uncompressed, UncompressedLen, sizeof(Uncompressed));
 
   if (Z_OK != compress(Data, &CompressedLen, Uncompressed, UncompressedLen))
     return 0;

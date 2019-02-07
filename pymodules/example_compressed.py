@@ -15,7 +15,7 @@ import sys
 import zlib
 
 
-def custom_mutator(data, max_size, seed):
+def custom_mutator(data, max_size, seed, native_mutator):
     '''
     Called for each mutation.
 
@@ -28,6 +28,12 @@ def custom_mutator(data, max_size, seed):
     @type seed: int
     @param seed: Seed for random decisions.
 
+    @type native_mutator: function
+    @param native_mutator: Callback to the native libFuzzer mutator.
+                           This mutator expects a bytearray and the
+                           max_size parameter. It modifies and resizes
+                           the bytearray in-place and returns None.
+
     @rtype: bytearray
     @return: A new bytearray containing the mutated data.
     '''
@@ -35,7 +41,7 @@ def custom_mutator(data, max_size, seed):
 
     try:
         uncompressed = bytearray(zlib.decompress(data))
-        uncompressed[random.randint(0, len(uncompressed) - 1)] = random.randint(0, 255)
+        native_mutator(uncompressed, max_size)
         compressed = bytearray(zlib.compress(uncompressed))
     except zlib.error:
         compressed = bytearray(zlib.compress(bytes("Hi", "utf8")))

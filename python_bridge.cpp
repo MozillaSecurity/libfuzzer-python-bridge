@@ -4,7 +4,33 @@
 
 #include <Python.h>
 
-static PyObject *py_module = NULL;
+static void LLVMFuzzerFinalizePythonModule();
+static void LLVMFuzzerInitPythonModule();
+
+static PyObject* py_module = NULL;
+
+class LLVMFuzzerPyContext {
+  public:
+    LLVMFuzzerPyContext() {
+      if (!py_module) {
+        LLVMFuzzerInitPythonModule();
+      }
+    }
+    ~LLVMFuzzerPyContext() {
+      if (py_module) {
+        LLVMFuzzerFinalizePythonModule();
+      }
+    }
+};
+
+// This takes care of (de)initializing things properly
+LLVMFuzzerPyContext init;
+
+static void py_fatal_error() {
+  fprintf(stderr, "The libFuzzer Python layer encountered a critical error.\n");
+  fprintf(stderr, "Please fix the messages above and then restart fuzzing.\n");
+  exit(1);
+}
 
 enum {
   /* 00 */ PY_FUNC_CUSTOM_MUTATOR,
@@ -12,7 +38,60 @@ enum {
   PY_FUNC_COUNT
 };
 
-static PyObject *py_functions[PY_FUNC_COUNT];
+static PyObject* py_functions[PY_FUNC_COUNT];
+
+// Forward-declare the libFuzzer's mutator callback.
+extern "C" size_t LLVMFuzzerMutate(uint8_t *Data, size_t Size, size_t MaxSize);
+
+// This function unwraps the Python arguments passed, which must be
+//
+// 1) A bytearray containing the data to be mutated
+// 2) An int containing the maximum size of the new mutation
+//
+// The function will modify the bytearray in-place (and resize it accordingly)
+// if necessary. It returns None.
+PyObject* LLVMFuzzerMutatePyCallback(PyObject* data, PyObject* args) {
+  PyObject* py_value;
+
+  // Get MaxSize first, so we know how much memory we need to allocate
+  py_value = PyTuple_GetItem(args, 1);
+  if (!py_value) {
+    fprintf(stderr, "Error: Missing MaxSize argument to native callback.\n");
+    py_fatal_error();
+  }
+  size_t MaxSize = PyLong_AsSize_t(py_value);
+  if (MaxSize == (size_t)-1 && PyErr_Occurred()) {
+    PyErr_Print();
+    fprintf(stderr, "Error: Failed to convert MaxSize argument to size_t.\n");
+    py_fatal_error();
+  }
+
+  // Now get the ByteArray with our data and resize it appropriately
+  py_value = PyTuple_GetItem(args, 0);
+  size_t Size = (size_t)PyByteArray_Size(py_value);
+  if (PyByteArray_Resize(py_value, MaxSize) < 0) {
+    fprintf(stderr, "Error: Failed to resize ByteArray to MaxSize.\n");
+    py_fatal_error();
+  }
+
+  // Call libFuzzer's native mutator
+  size_t RetLen =
+    LLVMFuzzerMutate((uint8_t *)PyByteArray_AsString(py_value), Size, MaxSize);
+
+  if (PyByteArray_Resize(py_value, RetLen) < 0) {
+    fprintf(stderr, "Error: Failed to resize ByteArray to RetLen.\n");
+    py_fatal_error();
+  }
+
+  Py_RETURN_NONE;
+}
+
+static PyMethodDef LLVMFuzzerMutatePyMethodDef = {
+  "LLVMFuzzerMutate",
+  LLVMFuzzerMutatePyCallback,
+  METH_VARARGS | METH_STATIC,
+  NULL
+};
 
 static void LLVMFuzzerInitPythonModule() {
   Py_Initialize();
@@ -36,7 +115,7 @@ static void LLVMFuzzerInitPythonModule() {
           PyErr_Print();
         fprintf(stderr, "Error: Cannot find/call custom mutator function in"
                         " external Python module.\n");
-        return;
+        py_fatal_error();
       }
 
       if (!py_functions[PY_FUNC_CUSTOM_CROSSOVER]
@@ -51,13 +130,16 @@ static void LLVMFuzzerInitPythonModule() {
       if (PyErr_Occurred())
         PyErr_Print();
       fprintf(stderr, "Error: Failed to load external Python module \"%s\"\n",
-      module_name);
+        module_name);
+      py_fatal_error();
     }
   } else {
     fprintf(stderr, "Warning: No Python module specified, please set the "
                     "LIBFUZZER_PYTHON_MODULE environment variable.\n");
-    exit(1);
+    py_fatal_error();
   }
+
+
 }
 
 static void LLVMFuzzerFinalizePythonModule() {
@@ -72,18 +154,14 @@ static void LLVMFuzzerFinalizePythonModule() {
 
 extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
                                           size_t MaxSize, unsigned int Seed) {
-  if (!py_module) {
-    LLVMFuzzerInitPythonModule();
-  }
-
-  PyObject* py_args = PyTuple_New(3);
+  PyObject* py_args = PyTuple_New(4);
 
   // Convert Data and Size to a ByteArray
   PyObject* py_value = PyByteArray_FromStringAndSize((const char*)Data, Size);
   if (!py_value) {
     Py_DECREF(py_args);
     fprintf(stderr, "Error: Failed to convert buffer.\n");
-    return 0;
+    py_fatal_error();
   }
   PyTuple_SetItem(py_args, 0, py_value);
 
@@ -92,7 +170,7 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
   if (!py_value) {
     Py_DECREF(py_args);
     fprintf(stderr, "Error: Failed to convert maximum size.\n");
-    return 0;
+    py_fatal_error();
   }
   PyTuple_SetItem(py_args, 1, py_value);
 
@@ -101,13 +179,23 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
   if (!py_value) {
     Py_DECREF(py_args);
     fprintf(stderr, "Error: Failed to convert seed.\n");
-    return 0;
+    py_fatal_error();
   }
   PyTuple_SetItem(py_args, 2, py_value);
+
+  PyObject* py_callback = PyCFunction_New(&LLVMFuzzerMutatePyMethodDef, NULL);
+  if (!py_callback) {
+    fprintf(stderr, "Failed to create native callback\n");
+    py_fatal_error();
+  }
+
+  // Pass the native callback
+  PyTuple_SetItem(py_args, 3, py_callback);
 
   py_value = PyObject_CallObject(py_functions[PY_FUNC_CUSTOM_MUTATOR], py_args);
 
   Py_DECREF(py_args);
+  Py_DECREF(py_callback);
 
   if (py_value != NULL) {
     ssize_t ReturnedSize = PyByteArray_Size(py_value);
@@ -123,6 +211,7 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *Data, size_t Size,
     if (PyErr_Occurred())
       PyErr_Print();
     fprintf(stderr, "Error: Call failed\n");
-    return 0;
+    py_fatal_error();
   }
+  return 0;
 }

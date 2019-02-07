@@ -27,8 +27,5 @@ To run the python example, use
 
 ## TODO
 
-* Support calling `LLVMFuzzerMutate` from Python (e.g. for the PNG example)
-* `LLVMFuzzerFinalizePythonModule` currently isn't called
-* `LLVMFuzzerInitPythonModule` should be called by a global constructor
 * Implement `LLVMFuzzerCustomCrossOver` in C++ and Python example
 * For some reason, the Python code is faster in benchmarks than the C++ code. There must be a bug somewhere, please find it!
