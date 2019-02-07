@@ -37,15 +37,28 @@ def custom_mutator(data, max_size, seed, native_mutator):
     @rtype: bytearray
     @return: A new bytearray containing the mutated data.
     '''
+    # If you want to make any random decisions within the mutator,
+    # you must base them on the provided seed.
     random.seed(seed)
 
     try:
         uncompressed = bytearray(zlib.decompress(data))
+
+        # This calls back into libFuzzer to let the builtin mutation routine
+        # deal with the uncompressed bytes. Using the native mutator is not
+        # mandatory, but recommended if you just want to mutate blobs of data.
+        # The builtin native mutator uses data flow feedback from the trace-cmp
+        # instrumentation, so it is superior to implementing your own simple
+        # binary mutations.
         native_mutator(uncompressed, max_size)
+
         compressed = bytearray(zlib.compress(uncompressed))
     except zlib.error:
         compressed = bytearray(zlib.compress(bytes("Hi", "utf8")))
 
+    # The bridge implementation will issue a warning if you return too much
+    # data, so make sure to stay below max_size. Note that it is possible for
+    # the initial data buffer to be larger than max_size already.
     if len(compressed) > max_size:
         return compressed[0:max_size]
     return compressed
